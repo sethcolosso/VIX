@@ -1,15 +1,10 @@
 """
-vix_reco.py
-
 Recommendation engine prototype:
 - Pulls real data via yfinance
 - Computes signals (momentum, mean-reversion, VIX-adjusted expected returns)
 - Produces combined expected returns
 - Runs constrained mean-variance optimizer with turnover constraint
-- Outputs buy / sell / hold suggestions with target weights and notional trades
-
-Usage:
-    python vix_reco.py
+- Outputs buy / sell / hold suggestions with target weights and notional trades using an LLM
 
 Notes:
 - Replace ASSETS with your desired universe (ETFs, stocks, bonds tickers).
@@ -25,11 +20,32 @@ import scipy.linalg
 import warnings
 
 warnings.filterwarnings("ignore", message="You are solving a parameterized problem that is not DPP")
+from transformers import pipeline
+
+# Load lightweight Hugging Face model (only once)
+nlp_model = pipeline("text2text-generation", model="google/flan-t5-small")
+
+def generate_nlp_summary(instructions_df, vix_value):
+    """
+    Convert raw trade instructions + VIX into natural language buy/sell suggestions.
+    """
+    # Turn dataframe into plain text
+    summary_text = f"VIX is {vix_value:.2f}. Portfolio trade instructions:\n"
+    for _, row in instructions_df.iterrows():
+        summary_text += f"{row['action']} {row['ticker']} worth {row['delta_usd']:.0f} USD ({row['delta_pct_of_portfolio']})\n"
+
+    # Build prompt for the model
+    prompt = (
+        f"Summarize the key portfolio actions in simple terms and explain why:\n\n{summary_text}"
+    )
+
+    response = nlp_model(prompt, max_new_tokens=1500, do_sample=False)
+    return response[0]["generated_text"]
 
 # -------------------------
 # User params / Universe
 # -------------------------
-ASSETS = ["SPY", "QQQ", "TLT", "IEF", "GLD", "DIA", "IWM", "XLF"]  # example universe
+ASSETS = ["SPY", "QQQ", "TLT", "IEF", "GLD", "NVDA", "MSFT", "TSLA"]  # example universe
 START_DATE = (datetime.utcnow() - timedelta(days=5*365)).strftime("%Y-%m-%d")
 END_DATE = datetime.utcnow().strftime("%Y-%m-%d")
 RISK_FREE_RATE = 0.03
@@ -55,8 +71,11 @@ CURRENT_PORTFOLIO_VALUE = 2_000_000  # USD, example
 CURRENT_HOLDINGS = {                 # example existing holdings (ticker -> USD notional)
     "SPY": 400_000,
     "QQQ": 300_000,
+    "NVDA": 300_000,
+    "MSFT":200_000,
+    "TSLA":200_000,
     "TLT": 200_000,
-    "GLD": 100_000
+    "GLD": 300_000
 }
 
 # -------------------------
@@ -329,29 +348,40 @@ def run_reco_pipeline(tickers=ASSETS, start=START_DATE, end=END_DATE, current_ho
 if __name__ == "__main__":
     out = run_reco_pipeline()
     print(f"VIX latest: {out['vix_latest']:.2f}")
+
+    # ---- Format instructions nicely ----
+    instr_df = out["instructions"].copy()
+    instr_df["current_notional"] = instr_df["current_notional"].round(0).astype(int)
+    instr_df["target_notional"] = instr_df["target_notional"].round(0).astype(int)
+    instr_df["delta_usd"] = instr_df["delta_usd"].round(0).astype(int)
+    instr_df["delta_pct_of_portfolio"] = (instr_df["delta_pct_of_portfolio"] * 100).round(1).astype(str) + "%"
+
     print("\nExpected returns (ann, est):")
-    print(out["expected_returns_ann"].sort_values(ascending=False).head(10))
+    print((out["expected_returns_ann"] * 100).round(2).astype(str) + "%")
+
     print("\nTarget weights:")
-    print(out["target_weights"].round(4).sort_values(ascending=False))
+    print((out["target_weights"] * 100).round(2).astype(str) + "%")
+
     print("\nTop trade suggestions:")
-    print(out["instructions"].head(20).to_string(index=False))
+    print(instr_df.head(20).to_string(index=False))
+
     # ---- Visualization ----
     # 1. Bar chart of expected returns
-    out["expected_returns_ann"].sort_values().plot(kind="barh", figsize=(8, 5), color="skyblue")
+    (out["expected_returns_ann"] * 100).sort_values().plot(kind="barh", figsize=(8, 5), color="skyblue")
     plt.title("Expected Annual Returns (Model Estimates)")
-    plt.xlabel("Expected Return")
+    plt.xlabel("Expected Return (%)")
     plt.tight_layout()
     plt.show()
 
     # 2. Target portfolio weights
-    out["target_weights"].sort_values().plot(kind="barh", figsize=(8, 5), color="orange")
-    plt.title("Optimized Target Weights")
-    plt.xlabel("Portfolio Weight")
+    (out["target_weights"] * 100).sort_values().plot(kind="barh", figsize=(8, 5), color="orange")
+    plt.title("Optimized Target Weights (%)")
+    plt.xlabel("Portfolio Weight (%)")
     plt.tight_layout()
     plt.show()
 
     # 3. Trade instructions (Buy/Sell/Hold)
-    instr_plot = out["instructions"].copy()
+    instr_plot = instr_df.copy()
     instr_plot.set_index("ticker")["delta_usd"].sort_values().plot(
         kind="barh", figsize=(8, 5),
         color=instr_plot["action"].map({"BUY": "green", "SELL": "red", "HOLD": "gray"})
@@ -360,3 +390,7 @@ if __name__ == "__main__":
     plt.xlabel("Trade Size (USD)")
     plt.tight_layout()
     plt.show()
+        # ---- NLP Summary ----
+    nlp_reco = generate_nlp_summary(instr_df, out["vix_latest"])
+    print("\nAI Portfolio Summary:")
+    print(nlp_reco)
