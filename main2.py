@@ -1,4 +1,3 @@
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -10,10 +9,8 @@ import warnings
 
 warnings.filterwarnings("ignore", message="You are solving a parameterized problem that is not DPP")
 from transformers import pipeline
-
 # Load lightweight Hugging Face model (only once)
 nlp_model = pipeline("text2text-generation", model="google/flan-t5-small")
-
 def generate_nlp_summary(instructions_df, vix_value):
     """
     Convert raw trade instructions + VIX into natural language buy/sell suggestions.
@@ -31,9 +28,6 @@ def generate_nlp_summary(instructions_df, vix_value):
     response = nlp_model(prompt, max_new_tokens=1500, do_sample=False)
     return response[0]["generated_text"]
 
-# -------------------------
-# User params / Universe
-# -------------------------
 ASSETS = ["SPY", "QQQ", "TLT", "IEF", "GLD", "NVDA", "MSFT", "TSLA"]  # example universe
 START_DATE = (datetime.utcnow() - timedelta(days=5*365)).strftime("%Y-%m-%d")
 END_DATE = datetime.utcnow().strftime("%Y-%m-%d")
@@ -110,7 +104,7 @@ def avg_daily_volume(tickers, start, end):
         df = df.to_frame(name=tickers[0])
     return df.mean().iloc[-1] if isinstance(df, pd.Series) else df.mean()
 
-# VIX-driven expected return: simple approach -> assets with higher beta to market suffer more when VIX rises.
+    # VIX-driven expected return: simple approach -> assets with higher beta to market suffer more when VIX rises.
 def compute_beta(returns_df, market_col="SPY"):
     if market_col not in returns_df.columns:
         raise ValueError("Market proxy must be in returns dataframe for beta calc.")
@@ -118,7 +112,6 @@ def compute_beta(returns_df, market_col="SPY"):
     var_mkt = returns_df[market_col].var()
     betas = cov.loc[:, market_col] / var_mkt
     return betas
-
 # Build combined expected returns
 def build_expected_returns(price_df, vix_series, w_mom12=W_MOM_12, w_mom3=W_MOM_3, w_mr=W_MR_21, w_vix=W_VIX):
     ret = compute_returns(price_df)
@@ -383,4 +376,5 @@ if __name__ == "__main__":
     nlp_reco = generate_nlp_summary(instr_df, out["vix_latest"])
     print("\nAI Portfolio Summary:")
     print(nlp_reco)
+
 
