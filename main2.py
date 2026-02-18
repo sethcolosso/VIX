@@ -60,7 +60,6 @@ CURRENT_HOLDINGS = {                 # example existing holdings (ticker -> USD 
     "TLT": 200_000,
     "GLD": 300_000
 }
-
 # -------------------------
 # Utilities / Data fetch
 # -------------------------
@@ -74,7 +73,6 @@ def fetch_vix(start, end):
     v = yf.download("^VIX", start=start, end=end, auto_adjust=True, progress=False)["Close"]
     v.name = "VIX"  # Fix: set the Series name directly
     return v
-
 # -------------------------
 # Signals
 # -------------------------
@@ -131,7 +129,6 @@ def build_expected_returns(price_df, vix_series, w_mom12=W_MOM_12, w_mom3=W_MOM_
     def zscore(s):
         s = s.astype(float)
         return (s - s.mean()) / (s.std(ddof=1) if s.std(ddof=1) != 0 else 1.0)
-
     mom12_z = zscore(mom12)
     mom3_z  = zscore(mom3)
     mr21_z  = zscore(mr21)
@@ -164,7 +161,6 @@ def build_forward_covariance(price_df, vix_series, alpha=ALPHA_VOL_BLEND, vix_th
     betas = compute_beta(returns, market_col="SPY")
     sigma_impl_ann = (betas.abs() * vix_ann).fillna(sigma_hist_ann)  # fallback to hist
     sigma_adj_ann = alpha * sigma_hist_ann + (1 - alpha) * sigma_impl_ann
-
     # correlation inflation
     if vix_latest > vix_thresh:
         excess = (vix_latest - vix_thresh) / vix_thresh
@@ -237,7 +233,6 @@ def optimize_with_turnover(mu_ann, cov_ann, current_weights, lb=MIN_WEIGHT, ub=M
     else:
         w_opt = np.array(w.value).flatten()
     return w_opt
-
 # -------------------------
 # Convert weights -> trades
 # -------------------------
@@ -275,9 +270,8 @@ def compute_trade_instructions(target_weights, current_holdings, tickers, portfo
     # sort by absolute delta descending
     instructions = sorted(instructions, key=lambda x: abs(x["delta_usd"]), reverse=True)
     return instructions
-
 # -------------------------
-# Main run
+# This     Main run
 # -------------------------
 def run_reco_pipeline(tickers=ASSETS, start=START_DATE, end=END_DATE, current_holdings_dict=CURRENT_HOLDINGS):
     price_df = fetch_price_data(tickers, start, end)
@@ -376,5 +370,6 @@ if __name__ == "__main__":
     nlp_reco = generate_nlp_summary(instr_df, out["vix_latest"])
     print("\nAI Portfolio Summary:")
     print(nlp_reco)
+
 
 
